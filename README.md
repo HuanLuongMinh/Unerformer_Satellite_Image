@@ -118,7 +118,7 @@ pip install -r requirements.txt
 
 ```
 torch==2.10.0+cu128   torchvision==0.25.0+cu128
-timm==0.9.16          albumentations==1.3.1
+timm==1.0.26          albumentations==1.3.1
 rasterio==1.3.9       pyyaml==6.0.1
 matplotlib==3.8.2     einops==0.7.0
 ```
