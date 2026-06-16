@@ -1,0 +1,31 @@
+DATASET:
+  ROOT_DIR: "/kaggle/input/open-earth-map"
+  TRAIN_IMG_DIR: "images/train"
+  TRAIN_MASK_DIR: "labels/train"
+  VAL_ROOT_DIR: "/kaggle/working/unetformer-openearthmap/dataset"
+  VAL_IMG_DIR: "images/val"
+  VAL_MASK_DIR: "labels/val"
+  TRAIN_SPLIT_FILE: "/kaggle/working/unetformer-openearthmap/dataset/train_1500_fixed.txt"
+  VAL_SPLIT_FILE: "/kaggle/working/unetformer-openearthmap/dataset/val_2000_fixed.txt"
+
+MODEL:
+  ARCH: "UnetFormer"
+  ENCODER: "resnet101"   # Options: "resnet18", "resnet101", "mit_b0"
+  PRETRAINED: true
+
+TRAIN:
+  NUM_CLASSES: 9
+  MAX_ITERS: 40000
+  VAL_INTERVAL: 4000
+  EARLY_STOPPING_PATIENCE: 3
+  BATCH_SIZE_PER_GPU: 2
+  NUM_WORKERS: 2
+  WARMUP_ITERS: 500
+
+OPTIMIZER:
+  BASE_LR: 0.0006
+  WEIGHT_DECAY: 0.01
+  GRAD_CLIP: 5.0
+
+OUTPUT:
+  WORK_DIR: "/kaggle/working/unetformer-openearthmap/work_dirs/luot3_1500"
