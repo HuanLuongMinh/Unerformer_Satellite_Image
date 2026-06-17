@@ -22,7 +22,9 @@ echo "========================================================"
 # ── Bước 1: Cài requirements (1 lần) ────────────────────────────────────────
 echo ""
 echo "[1/5] Cài đặt requirements ..."
-pip install -q -r "$SCRIPT_DIR/requirements.txt"
+# Kaggle pre-installs numba/cuda-core ở version mới hơn cudf/cuml cần.
+# pip báo conflict warnings (exit 1) nhưng không ảnh hưởng code của chúng ta.
+pip install -q -r "$SCRIPT_DIR/requirements.txt" || true
 echo "      Done."
 
 # ── Bước 2: Tạo splits (1 lần) ───────────────────────────────────────────────
