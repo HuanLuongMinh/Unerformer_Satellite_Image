@@ -63,9 +63,9 @@ Segmentation Map (9 classes)
 
 | Experiment | Train images | Config |
 |---|---|---|
-| Luot 1 | 500 | `configs/luot1_500.yaml` |
-| Luot 2 | 1,000 | `configs/luot2_1000.yaml` |
-| Luot 3 | 1,500 | `configs/luot3_1500.yaml` |
+| Luot 1 | 500 | `configs/cnn/luot1_500.yaml` |
+| Luot 2 | 1,000 | `configs/cnn/luot2_1000.yaml` |
+| Luot 3 | 1,500 | `configs/cnn/luot3_1500.yaml` |
 
 All experiments use **ResNet-101** encoder with identical decoder and training settings to isolate the effect of training data size.
 
@@ -76,16 +76,17 @@ All experiments use **ResNet-101** encoder with identical decoder and training s
 ```
 UnetFormer Satellite Image/
 ├── configs/
-│   ├── luot1_500.yaml       # 500-image ablation config
-│   ├── luot2_1000.yaml      # 1000-image ablation config
-│   └── luot3_1500.yaml      # 1500-image ablation config
+│   └── cnn/
+│       ├── luot1_500.yaml   # 500-image ablation config
+│       ├── luot2_1000.yaml  # 1000-image ablation config
+│       └── luot3_1500.yaml  # 1500-image ablation config
 ├── src/
-│   ├── train.py             # Main training script (DDP + AMP)
+│   ├── train_cnn.py         # Main training script (DDP + AMP)
 │   ├── data/
 │   │   ├── dataset.py       # OpenEarthMap PyTorch Dataset
 │   │   └── transforms.py    # Albumentations pipelines
 │   ├── models/
-│   │   └── unetformer.py    # Multi-encoder UNetFormer
+│   │   └── unetcnn.py       # Multi-encoder CNN U-Net (baseline; UNetFormer migration in progress)
 │   └── utils/
 │       ├── losses.py        # Cross-Entropy + Dice loss
 │       ├── metrics.py       # Confusion-matrix mIoU
@@ -97,7 +98,7 @@ UnetFormer Satellite Image/
 ├── dataset/
 │   └── val_2000_fixed.txt   # Pre-generated validation split
 ├── requirements.txt
-└── run_experiment.sh        # One-command training launcher
+└── run_cnn_experiment.sh    # One-command training launcher
 ```
 
 ---
@@ -131,19 +132,19 @@ matplotlib>=3.9       einops>=0.7.0
 
 ```bash
 # Train with 500 images
-bash run_experiment.sh 1
+bash run_cnn_experiment.sh 1
 
 # Train with 1000 images
-bash run_experiment.sh 2
+bash run_cnn_experiment.sh 2
 
 # Train with 1500 images
-bash run_experiment.sh 3
+bash run_cnn_experiment.sh 3
 
 # Quick smoke-test (5 iterations only)
-bash run_experiment.sh 1 --dry-run
+bash run_cnn_experiment.sh 1 --dry-run
 ```
 
-`run_experiment.sh` handles: pip install → split generation → distributed training automatically.
+`run_cnn_experiment.sh` handles: pip install → split generation → distributed training automatically.
 
 ### Manual launch
 
@@ -151,10 +152,10 @@ bash run_experiment.sh 1 --dry-run
 # Step 1 — generate split files
 python Tools/create_splits.py \
     --data-root /kaggle/input/datasets/dyiyacao/openearthmap \
-    --output-dir /kaggle/working/unetformer-openearthmap
+    --output-dir /kaggle/working/unetcnn-openearthmap
 
 # Step 2 — start training (2 GPUs)
-torchrun --nproc_per_node=2 src/train.py --config configs/luot1_500.yaml
+torchrun --nproc_per_node=2 src/train_cnn.py --config configs/cnn/luot1_500.yaml
 ```
 
 ---

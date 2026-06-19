@@ -1,9 +1,9 @@
 """
-Main training script for UNetFormer on OpenEarthMap.
+Main training script for UNetCNN (CNN baseline) on OpenEarthMap.
 
 Usage (Kaggle, 2× T4):
-    torchrun --nproc_per_node=2 src/train.py --config configs/luot1_500.yaml
-    torchrun --nproc_per_node=2 src/train.py --config configs/luot1_500.yaml --dry-run
+    torchrun --nproc_per_node=2 src/train_cnn.py --config configs/cnn/luot1_500.yaml
+    torchrun --nproc_per_node=2 src/train_cnn.py --config configs/cnn/luot1_500.yaml --dry-run
 """
 
 import argparse
@@ -27,7 +27,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.data.dataset import OpenEarthMapDataset
 from src.data.transforms import get_train_transforms, get_val_transforms
-from src.models.unetformer import build_model
+from src.models.unetcnn import build_model
 from src.utils.callbacks import EarlyStopping
 from src.utils.losses import CombinedLoss
 from src.utils.metrics import SegmentationMetrics

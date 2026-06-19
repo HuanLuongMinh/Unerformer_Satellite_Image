@@ -8,7 +8,7 @@
 set -e
 
 DATA_ROOT="/kaggle/input/datasets/dyiyacao/openearthmap"
-WORK_BASE="/kaggle/working/unetformer-openearthmap"
+WORK_BASE="/kaggle/working/unetcnn-openearthmap"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DRY_RUN="${1:-}"
 
@@ -41,9 +41,9 @@ cd "$SCRIPT_DIR"
 echo ""
 echo "[3/5] Training luot1 — 500 ảnh ..."
 if [[ "$DRY_RUN" == "--dry-run" ]]; then
-    torchrun --nproc_per_node=2 src/train.py --config configs/luot1_500.yaml --dry-run
+    torchrun --nproc_per_node=2 src/train_cnn.py --config configs/cnn/luot1_500.yaml --dry-run
 else
-    torchrun --nproc_per_node=2 src/train.py --config configs/luot1_500.yaml
+    torchrun --nproc_per_node=2 src/train_cnn.py --config configs/cnn/luot1_500.yaml
 fi
 echo "      Luot 1 hoàn thành."
 
@@ -51,9 +51,9 @@ echo "      Luot 1 hoàn thành."
 echo ""
 echo "[4/5] Training luot2 — 1000 ảnh ..."
 if [[ "$DRY_RUN" == "--dry-run" ]]; then
-    torchrun --nproc_per_node=2 src/train.py --config configs/luot2_1000.yaml --dry-run
+    torchrun --nproc_per_node=2 src/train_cnn.py --config configs/cnn/luot2_1000.yaml --dry-run
 else
-    torchrun --nproc_per_node=2 src/train.py --config configs/luot2_1000.yaml
+    torchrun --nproc_per_node=2 src/train_cnn.py --config configs/cnn/luot2_1000.yaml
 fi
 echo "      Luot 2 hoàn thành."
 
@@ -61,9 +61,9 @@ echo "      Luot 2 hoàn thành."
 echo ""
 echo "[5/5] Training luot3 — 1500 ảnh ..."
 if [[ "$DRY_RUN" == "--dry-run" ]]; then
-    torchrun --nproc_per_node=2 src/train.py --config configs/luot3_1500.yaml --dry-run
+    torchrun --nproc_per_node=2 src/train_cnn.py --config configs/cnn/luot3_1500.yaml --dry-run
 else
-    torchrun --nproc_per_node=2 src/train.py --config configs/luot3_1500.yaml
+    torchrun --nproc_per_node=2 src/train_cnn.py --config configs/cnn/luot3_1500.yaml
 fi
 echo "      Luot 3 hoàn thành."
 

@@ -9,7 +9,7 @@ Workflow (called automatically in sequence):
 Usage (Kaggle):
     python tools/create_splits.py \
         --data-root /kaggle/input/datasets/dyiyacao/openearthmap \
-        --output-dir /kaggle/working/unetformer-openearthmap
+        --output-dir /kaggle/working/unetcnn-openearthmap
 
 Usage (local):
     python tools/create_splits.py --data-root /path/to/dataset
@@ -151,7 +151,7 @@ def main():
                         help='Dataset root (e.g. /kaggle/input/datasets/dyiyacao/openearthmap)')
     parser.add_argument('--output-dir', default=None,
                         help='Where to write .txt files. '
-                             'On Kaggle: /kaggle/working/unetformer-openearthmap. '
+                             'On Kaggle: /kaggle/working/unetcnn-openearthmap. '
                              'Default: same as --data-root.')
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--img-suffix', default='.tif')
@@ -170,7 +170,7 @@ def main():
     print('\n=== All splits ready ===')
     print(f'  Location: {output_dir}')
     print('\nNext step — start training:')
-    print('  torchrun --nproc_per_node=2 src/train.py --config configs/luot1_500.yaml')
+    print('  torchrun --nproc_per_node=2 src/train_cnn.py --config configs/cnn/luot1_500.yaml')
 
 
 if __name__ == '__main__':

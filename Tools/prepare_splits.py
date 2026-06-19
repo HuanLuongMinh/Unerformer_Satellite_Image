@@ -45,15 +45,15 @@ def parse_args():
         help='Source directory containing validation labels/masks')
     p.add_argument(
         '--out-dir',
-        default='/kaggle/working/unetformer-openearthmap/dataset',
+        default='/kaggle/working/unetcnn-openearthmap/dataset',
         help='Directory to write val_N_fixed.txt')
     p.add_argument(
         '--aug-img-dir',
-        default='/kaggle/working/unetformer-openearthmap/dataset/images/val',
+        default='/kaggle/working/unetcnn-openearthmap/dataset/images/val',
         help='Destination for copies of originals + augmented images')
     p.add_argument(
         '--aug-label-dir',
-        default='/kaggle/working/unetformer-openearthmap/dataset/labels/val',
+        default='/kaggle/working/unetcnn-openearthmap/dataset/labels/val',
         help='Destination for copies of originals + augmented labels')
     p.add_argument(
         '--seed', type=int, default=42,
@@ -222,9 +222,9 @@ def main():
             'prepare_splits.py',
             '--val-dir',       '/kaggle/input/datasets/dyiyacao/openearthmap/images/val',
             '--label-dir',     '/kaggle/input/datasets/dyiyacao/openearthmap/labels/val',
-            '--out-dir',       '/kaggle/working/unetformer-openearthmap/dataset',
-            '--aug-img-dir',   '/kaggle/working/unetformer-openearthmap/dataset/images/val',
-            '--aug-label-dir', '/kaggle/working/unetformer-openearthmap/dataset/labels/val',
+            '--out-dir',       '/kaggle/working/unetcnn-openearthmap/dataset',
+            '--aug-img-dir',   '/kaggle/working/unetcnn-openearthmap/dataset/images/val',
+            '--aug-label-dir', '/kaggle/working/unetcnn-openearthmap/dataset/labels/val',
             '--val-size',      '2000',
         ]
     args = parse_args()

@@ -37,8 +37,8 @@ class DecoderBlock(nn.Module):
         return self.conv(x)
 
 
-class UNetFormer(nn.Module):
-    """Multi-encoder UNetFormer with CNN decoder.
+class UNetCNN(nn.Module):
+    """Multi-encoder UNetCNN with CNN decoder.
 
     Ablation encoder options: 'resnet18', 'resnet101', 'mit_b0'.
     Channel Projection Block normalises encoder outputs to [64, 128, 256, 512]
@@ -110,8 +110,8 @@ class UNetFormer(nn.Module):
         return self.classifier(out)
 
 
-def build_model(cfg: dict) -> UNetFormer:
-    return UNetFormer(
+def build_model(cfg: dict) -> UNetCNN:
+    return UNetCNN(
         encoder_name=cfg['MODEL']['ENCODER'],
         num_classes=cfg['TRAIN']['NUM_CLASSES'],
         pretrained=cfg['MODEL']['PRETRAINED'],

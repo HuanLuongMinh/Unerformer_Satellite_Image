@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
-# run_experiment.sh — cài requirements, tạo splits, chạy 1 trong 3 ablation configs
+# run_cnn_experiment.sh — cài requirements, tạo splits, chạy 1 trong 3 ablation configs
 #
 # Cách dùng:
-#   bash run_experiment.sh 1        # train với 500 ảnh  (luot1_500.yaml)
-#   bash run_experiment.sh 2        # train với 1000 ảnh (luot2_1000.yaml)
-#   bash run_experiment.sh 3        # train với 1500 ảnh (luot3_1500.yaml)
-#   bash run_experiment.sh 1 --dry-run   # smoke-test (5 iters)
+#   bash run_cnn_experiment.sh 1        # train với 500 ảnh  (luot1_500.yaml)
+#   bash run_cnn_experiment.sh 2        # train với 1000 ảnh (luot2_1000.yaml)
+#   bash run_cnn_experiment.sh 3        # train với 1500 ảnh (luot3_1500.yaml)
+#   bash run_cnn_experiment.sh 1 --dry-run   # smoke-test (5 iters)
 
 set -e  # dừng ngay nếu có lỗi
 
 # ── Cấu hình đường dẫn ───────────────────────────────────────────────────────
 DATA_ROOT="/kaggle/input/datasets/dyiyacao/openearthmap"
-WORK_BASE="/kaggle/working/unetformer-openearthmap"
+WORK_BASE="/kaggle/working/unetcnn-openearthmap"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # ── Đọc tham số ──────────────────────────────────────────────────────────────
@@ -19,7 +19,7 @@ EXPERIMENT="${1:-}"
 DRY_RUN="${2:-}"
 
 if [[ -z "$EXPERIMENT" ]]; then
-    echo "Cách dùng: bash run_experiment.sh <1|2|3> [--dry-run]"
+    echo "Cách dùng: bash run_cnn_experiment.sh <1|2|3> [--dry-run]"
     echo "  1 → train với 500 ảnh  (luot1_500.yaml)"
     echo "  2 → train với 1000 ảnh (luot2_1000.yaml)"
     echo "  3 → train với 1500 ảnh (luot3_1500.yaml)"
@@ -27,9 +27,9 @@ if [[ -z "$EXPERIMENT" ]]; then
 fi
 
 case "$EXPERIMENT" in
-    1) CONFIG="configs/luot1_500.yaml";  LABEL="luot1 — 500 ảnh"  ;;
-    2) CONFIG="configs/luot2_1000.yaml"; LABEL="luot2 — 1000 ảnh" ;;
-    3) CONFIG="configs/luot3_1500.yaml"; LABEL="luot3 — 1500 ảnh" ;;
+    1) CONFIG="configs/cnn/luot1_500.yaml";  LABEL="luot1 — 500 ảnh"  ;;
+    2) CONFIG="configs/cnn/luot2_1000.yaml"; LABEL="luot2 — 1000 ảnh" ;;
+    3) CONFIG="configs/cnn/luot3_1500.yaml"; LABEL="luot3 — 1500 ảnh" ;;
     *)
         echo "Lỗi: experiment phải là 1, 2 hoặc 3 (nhận được: '$EXPERIMENT')"
         exit 1
@@ -68,9 +68,9 @@ echo ""
 cd "$SCRIPT_DIR"
 
 if [[ "$DRY_RUN" == "--dry-run" ]]; then
-    torchrun --nproc_per_node=2 src/train.py --config "$CONFIG" --dry-run
+    torchrun --nproc_per_node=2 src/train_cnn.py --config "$CONFIG" --dry-run
 else
-    torchrun --nproc_per_node=2 src/train.py --config "$CONFIG"
+    torchrun --nproc_per_node=2 src/train_cnn.py --config "$CONFIG"
 fi
 
 echo ""

@@ -2,14 +2,14 @@ DATASET:
   ROOT_DIR: "/kaggle/input/datasets/dyiyacao/openearthmap"
   TRAIN_IMG_DIR: "images/train"
   TRAIN_MASK_DIR: "labels/train"
-  VAL_ROOT_DIR: "/kaggle/working/unetformer-openearthmap/dataset"
+  VAL_ROOT_DIR: "/kaggle/working/unetcnn-openearthmap/dataset"
   VAL_IMG_DIR: "images/val"
   VAL_MASK_DIR: "labels/val"
-  TRAIN_SPLIT_FILE: "/kaggle/working/unetformer-openearthmap/dataset/train_500_fixed.txt"
-  VAL_SPLIT_FILE: "/kaggle/working/unetformer-openearthmap/dataset/val_2000_fixed.txt"
+  TRAIN_SPLIT_FILE: "/kaggle/working/unetcnn-openearthmap/dataset/train_1000_fixed.txt"
+  VAL_SPLIT_FILE: "/kaggle/working/unetcnn-openearthmap/dataset/val_2000_fixed.txt"
 
 MODEL:
-  ARCH: "UnetFormer"
+  ARCH: "UnetCNN"
   ENCODER: "resnet101"   # Options: "resnet18", "resnet101", "mit_b0"
   PRETRAINED: true
 
@@ -28,4 +28,4 @@ OPTIMIZER:
   GRAD_CLIP: 5.0
 
 OUTPUT:
-  WORK_DIR: "/kaggle/working/unetformer-openearthmap/work_dirs/luot1_500"
+  WORK_DIR: "/kaggle/working/unetcnn-openearthmap/work_dirs/luot2_1000"
