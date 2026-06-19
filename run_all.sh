@@ -22,10 +22,13 @@ echo "========================================================"
 # ── Bước 1: Cài requirements (1 lần) ────────────────────────────────────────
 echo ""
 echo "[1/5] Cài đặt requirements ..."
-# requirements.txt đã ghim numba/numba-cuda/cuda-core đúng dải cudf/cuml/dask-cuda cần,
-# nên không còn conflict warnings. Giữ "|| true" làm lưới an toàn phòng trường hợp
-# Kaggle đổi version base image.
-pip install -q -r "$SCRIPT_DIR/requirements.txt" || true
+# requirements.txt đã ghim numba/numba-cuda/cuda-core đúng dải cudf/cuml/dask-cuda cần.
+# Các dòng "ERROR: pip's dependency resolver ..." còn lại (bigframes, google-colab,
+# dopamine-rl, moviepy, tensorflow, ...) là xung đột pre-existing giữa các package
+# có sẵn trên Kaggle/Colab, không liên quan tới dự án này — lọc bỏ để output sạch.
+pip install -q -r "$SCRIPT_DIR/requirements.txt" 2>&1 \
+    | grep -v -E "pip's dependency resolver|requires .*(incompatible|which is not installed)" \
+    || true
 echo "      Done."
 
 # ── Bước 2: Tạo splits (1 lần) ───────────────────────────────────────────────
