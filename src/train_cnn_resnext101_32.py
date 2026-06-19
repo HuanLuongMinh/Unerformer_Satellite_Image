@@ -1,9 +1,13 @@
 """
-Main training script for UNetCNN (CNN baseline) on OpenEarthMap.
+Training script for UNetCNN — encoder resnext101_32x16d.fb_swsl_ig1b_ft_in1k,
+loss = CrossEntropy thuần (không Dice), BASE_LR = 1e-5.
 
-Usage (Kaggle, 2× T4):
-    torchrun --nproc_per_node=2 src/train_cnn.py --config configs/cnn/luot1_500.yaml
-    torchrun --nproc_per_node=2 src/train_cnn.py --config configs/cnn/luot1_500.yaml --dry-run
+File này độc lập với src/train_cnn.py để các thí nghiệm resnet101 cũ
+không bị ảnh hưởng khi chạy lại.
+
+Usage (Kaggle, 2x T4):
+    torchrun --nproc_per_node=2 src/train_cnn_resnext101_32.py --config configs/cnn_reshnet101_32/luot1_500.yaml
+    torchrun --nproc_per_node=2 src/train_cnn_resnext101_32.py --config configs/cnn_reshnet101_32/luot1_500.yaml --dry-run
 """
 
 import argparse
@@ -17,6 +21,7 @@ from datetime import datetime
 import numpy as np
 import torch
 import torch.distributed as dist
+import torch.nn as nn
 import yaml
 from torch.cuda.amp import GradScaler, autocast
 from torch.nn.parallel import DistributedDataParallel as DDP
@@ -28,9 +33,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.data.dataset import OpenEarthMapDataset
 from src.data.transforms import get_train_transforms, get_val_transforms
-from src.models.unetcnn import build_model
+from src.models.unetcnn_resnext101_32 import build_model
 from src.utils.callbacks import EarlyStopping
-from src.utils.losses import CombinedLoss
 from src.utils.metrics import SegmentationMetrics
 from src.utils.visualizer import save_visualization
 
@@ -43,9 +47,9 @@ def load_config(path: str) -> dict:
 
 
 def set_seed(seed: int):
-    """Đặt seed chung cho random/numpy/torch để cả 3 lượt 500/1000/1500 ảnh
-    đều khởi tạo model và shuffle dữ liệu theo đúng cùng 1 seed, chỉ khác
-    nhau ở lượng dữ liệu train (đồng bộ với Track B — train_cnn_resnext101_32.py)."""
+    """Đặt seed chung cho random/numpy/torch để 3 lượt 500/1000/1500 ảnh
+    đều khởi tạo model (decoder/proj random init) và shuffle dữ liệu theo
+    đúng cùng 1 seed, chỉ khác nhau ở lượng dữ liệu train."""
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
@@ -77,6 +81,32 @@ def is_main() -> bool:
 def log(msg: str):
     if is_main():
         print(msg, flush=True)
+
+
+def load_checkpoint_file(path: str) -> dict:
+    if not os.path.exists(path):
+        raise FileNotFoundError(f'--resume checkpoint not found: {path}')
+    return torch.load(path, map_location='cpu')
+
+
+def save_checkpoint(path: str, model, optimizer, scaler, iteration: int,
+                     early_stopping, best_miou: float, best_per_class):
+    ckpt = {
+        'iteration':            iteration,
+        'model_state_dict':     model.module.state_dict(),
+        'optimizer_state_dict': optimizer.state_dict(),
+        'scaler_state_dict':    scaler.state_dict(),
+        'early_stopping': {
+            'best':      early_stopping.best,
+            'counter':   early_stopping.counter,
+            'triggered': early_stopping.triggered,
+        },
+        'best_miou':      best_miou,
+        'best_per_class': best_per_class,
+    }
+    tmp_path = path + '.tmp'
+    torch.save(ckpt, tmp_path)
+    os.replace(tmp_path, path)
 
 
 # ── Validation ───────────────────────────────────────────────────────────────
@@ -143,6 +173,8 @@ def main():
     parser.add_argument('--config',  required=True, help='Path to YAML config')
     parser.add_argument('--dry-run', action='store_true',
                         help='Quick smoke-test: 5 iters, 2 val steps, 4 samples')
+    parser.add_argument('--resume', default=None,
+                        help='Path to latest_checkpoint.pth to resume training from')
     args = parser.parse_args()
 
     # ── DDP init ────────────────────────────────────────────────────────────
@@ -159,6 +191,8 @@ def main():
     tr  = cfg['TRAIN']
     opt = cfg['OPTIMIZER']
     out = cfg['OUTPUT']
+
+    resume_ckpt = load_checkpoint_file(args.resume) if args.resume else None
 
     seed = tr.get('SEED', 42)
     set_seed(seed)
@@ -220,29 +254,62 @@ def main():
 
     # ── Model ────────────────────────────────────────────────────────────────
     model = build_model(cfg).to(device)
+    if resume_ckpt is not None:
+        model.load_state_dict(resume_ckpt['model_state_dict'])
+        log(f"Resumed model weights from {args.resume} (iteration {resume_ckpt['iteration']})")
     model = DDP(model, device_ids=[local_rank], find_unused_parameters=False)
 
     # ── Loss, Optimizer, Scaler ──────────────────────────────────────────────
-    criterion = CombinedLoss(num_classes=tr['NUM_CLASSES']).to(device)
+    # CE thuần (không Dice) theo yêu cầu thí nghiệm resnext101_32x16d.
+    criterion = nn.CrossEntropyLoss(ignore_index=255).to(device)
     optimizer = torch.optim.AdamW(
         model.parameters(),
         lr=opt['BASE_LR'],
         weight_decay=opt['WEIGHT_DECAY'],
     )
     scaler = GradScaler()
+    if resume_ckpt is not None:
+        optimizer.load_state_dict(resume_ckpt['optimizer_state_dict'])
+        scaler.load_state_dict(resume_ckpt['scaler_state_dict'])
 
     # ── Training state ───────────────────────────────────────────────────────
-    early_stopping    = EarlyStopping(patience=tr['EARLY_STOPPING_PATIENCE'])
-    best_miou         = 0.0
-    best_per_class    = None   # per-class IoU at best val
-    best_state_dict   = None   # model weights at best val (kept in CPU memory)
-    history           = []     # list of {iter, mIoU, val_loss, iou_<class>…}
+    early_stopping = EarlyStopping(patience=tr['EARLY_STOPPING_PATIENCE'])
+    if resume_ckpt is not None:
+        early_stopping.best      = resume_ckpt['early_stopping']['best']
+        early_stopping.counter   = resume_ckpt['early_stopping']['counter']
+        early_stopping.triggered = resume_ckpt['early_stopping']['triggered']
+
+    best_miou      = resume_ckpt['best_miou']      if resume_ckpt is not None else 0.0
+    best_per_class = resume_ckpt['best_per_class'] if resume_ckpt is not None else None
+    best_state_dict = None   # model weights at best val (kept in CPU memory)
+    history         = []     # list of {iter, mIoU, val_loss, iou_<class>…}
+
+    if resume_ckpt is not None and is_main():
+        best_path = os.path.join(out['WORK_DIR'], 'best_model.pth')
+        if os.path.exists(best_path):
+            best_state_dict = torch.load(best_path, map_location='cpu')
+            log(f"Reloaded best_model.pth (mIoU={best_miou:.4f}) for export continuity")
+
+        csv_path = os.path.join(out['WORK_DIR'], 'benchmark_results.csv')
+        if os.path.exists(csv_path):
+            with open(csv_path, newline='') as f:
+                for row in csv.DictReader(f):
+                    row['iter']     = int(row['iter'])
+                    row['mIoU']     = float(row['mIoU'])
+                    row['val_loss'] = float(row['val_loss'])
+                    history.append(row)
+            log(f"Reconstructed {len(history)} history rows from {csv_path}")
+
+    start_iter = resume_ckpt['iteration'] + 1 if resume_ckpt is not None else 1
+    if args.dry_run and resume_ckpt is not None and start_iter > tr['MAX_ITERS']:
+        log(f"Warning: --dry-run MAX_ITERS={tr['MAX_ITERS']} <= resumed "
+            f"start_iter={start_iter}; loop will not execute.")
 
     # ── Training loop ────────────────────────────────────────────────────────
     log(f"Training {tr['MAX_ITERS']} iterations | "
-        f"encoder={mdl['ENCODER']} | split={ds['TRAIN_SPLIT_FILE']}")
+        f"encoder={mdl['ENCODER']} | loss=CE | split={ds['TRAIN_SPLIT_FILE']}")
 
-    for iteration in range(1, tr['MAX_ITERS'] + 1):
+    for iteration in range(start_iter, tr['MAX_ITERS'] + 1):
         model.train()
 
         lr = poly_lr(
@@ -280,50 +347,61 @@ def main():
             miou = val_result['mIoU']
             log(f"  [Val iter {iteration}] mIoU={miou:.4f}  val_loss={val_result['val_loss']:.4f}")
 
+            stop_flag = False
             if is_main():
                 _cls  = ['Background','Bareland','Rangeland','Developed','Road',
                          'Tree','Water','Agriculture','Building']
                 _abbr = ['Bg','Bare','Range','Dev','Road','Tree','Water','Agri','Bldg']
                 per_class = val_result['per_class_iou']
 
-                history.append({
+                # Track best in memory + on disk
+                is_new_best = miou > best_miou
+                if is_new_best:
+                    best_miou       = miou
+                    best_per_class  = list(per_class)
+                    best_state_dict = {k: v.cpu().clone()
+                                       for k, v in model.module.state_dict().items()}
+                    best_path = os.path.join(out['WORK_DIR'], 'best_model.pth')
+                    torch.save(best_state_dict, best_path)
+                    log(f"  ✔ New best mIoU={best_miou:.4f} → saved {best_path}")
+
+                row = {
                     'iter':     iteration,
                     'mIoU':     val_result['mIoU'],
                     'val_loss': val_result['val_loss'],
                     **{f'iou_{n}': round(v, 4) for n, v in zip(_cls, per_class)},
-                })
+                    'is_best':  is_new_best,
+                }
+                history.append(row)
                 iou_str = '  '.join(f'{a}:{v:.3f}' for a, v in zip(_abbr, per_class))
                 log(f"    {iou_str}")
+
+                # Append to benchmark_results.csv incrementally (survives a crash)
+                csv_path = os.path.join(out['WORK_DIR'], 'benchmark_results.csv')
+                write_header = not os.path.exists(csv_path)
+                with open(csv_path, 'a', newline='') as f:
+                    writer = csv.DictWriter(f, fieldnames=row.keys())
+                    if write_header:
+                        writer.writeheader()
+                    writer.writerow(row)
 
                 # Save visualisations
                 visualise_samples(model, val_loader, out['WORK_DIR'],
                                   iteration, device, amp_enabled=True, miou=miou)
 
-                # Track best in memory
-                if miou > best_miou:
-                    best_miou       = miou
-                    best_per_class  = list(per_class)
-                    best_state_dict = {k: v.cpu().clone()
-                                       for k, v in model.module.state_dict().items()}
-                    log(f"  ✔ New best mIoU={best_miou:.4f}")
+                # Early stopping decision (computed on rank 0, broadcast below)
+                stop_flag = early_stopping.step(miou)
 
-                # Periodic checkpoint at multiples of 12000
-                if iteration % 12000 == 0:
-                    ckpt_path = os.path.join(out['WORK_DIR'],
-                                             f'checkpoint_iter{iteration:06d}.pth')
-                    torch.save(model.module.state_dict(), ckpt_path)
-                    log(f"  Saved checkpoint iter {iteration} → {ckpt_path}")
+                # Full resumable checkpoint, overwritten after every validation
+                ckpt_path = os.path.join(out['WORK_DIR'], 'latest_checkpoint.pth')
+                save_checkpoint(ckpt_path, model, optimizer, scaler, iteration,
+                                 early_stopping, best_miou, best_per_class)
+                log(f"  Saved checkpoint (iter {iteration}) → {ckpt_path}")
 
-            # Early stopping (check on rank 0, broadcast decision)
-            should_stop = torch.tensor(
-                int(early_stopping.step(miou)), device=device)
+            should_stop = torch.tensor(int(stop_flag), device=device)
             dist.broadcast(should_stop, src=0)
             if should_stop.item():
                 log(f"Early stopping at iteration {iteration}.")
-                if is_main() and best_state_dict is not None:
-                    ckpt_path = os.path.join(out['WORK_DIR'], 'best_model.pth')
-                    torch.save(best_state_dict, ckpt_path)
-                    log(f"  Saved best model (mIoU={best_miou:.4f}) → {ckpt_path}")
                 break
 
     # ── Export artefacts ─────────────────────────────────────────────────────
@@ -333,15 +411,6 @@ def main():
         if not os.path.exists(ckpt_path) and best_state_dict is not None:
             torch.save(best_state_dict, ckpt_path)
             log(f"Saved best model (mIoU={best_miou:.4f}) → {ckpt_path}")
-
-        # benchmark_results.csv
-        csv_path = os.path.join(out['WORK_DIR'], 'benchmark_results.csv')
-        if history:
-            with open(csv_path, 'w', newline='') as f:
-                writer = csv.DictWriter(f, fieldnames=history[0].keys())
-                writer.writeheader()
-                writer.writerows(history)
-            log(f"Saved benchmark results to {csv_path}")
 
         try:
             import matplotlib.pyplot as plt
