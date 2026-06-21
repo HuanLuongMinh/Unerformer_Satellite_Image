@@ -1,19 +1,23 @@
 # UNet CNN — Satellite Image Semantic Segmentation
 
-An ablation study comparing CNN/Transformer encoders on the [OpenEarthMap](https://open-earth-map.org/) dataset using a CNN U-Net decoder (Channel Projection Block + DecoderBlock), kept identical across encoder choices for fair comparison.
+An ablation study comparing encoder/decoder/loss choices on the [OpenEarthMap](https://open-earth-map.org/) dataset.
 
-Two independent experiment tracks exist side-by-side in this repo:
+Bốn track thí nghiệm hoàn toàn độc lập về code (không file nào bị chia sẻ/sửa đổi chéo) cùng tồn tại trong repo:
 
-| Track | Encoder | Loss | Base LR | Scripts/configs |
-|---|---|---|---|---|
-| **A — baseline (gốc)** | ResNet-101 (ImageNet) | CE + Dice | 6e-4 | `src/train_cnn.py`, `configs/cnn/`, `run_cnn_experiment.sh` |
-| **B — resnext101_32x16d (mới)** | ResNeXt-101_32x16d (SWSL, ~1B ảnh pretrain) | CE thuần | 1e-5 | `src/train_cnn_resnext101_32.py`, `configs/cnn_reshnet101_32/`, `run_cnn_reshnet101_32_experiment.sh` |
+| Track | Encoder | Decoder | Loss | Base LR | Train script |
+|---|---|---|---|---|---|
+| **A — baseline (gốc)** | ResNet-101 (ImageNet) | CNN (Channel Projection + DecoderBlock) | CE + Dice | 6e-4 | `src/train_cnn.py` |
+| **B — CNN/ResNeXt101_32x16d** | ResNeXt-101_32x16d (SWSL, ~1B ảnh pretrain) | CNN (giống Track A) | CE thuần | 1e-5 | `src/train_cnn_resnext101_32.py` |
+| **C — UNetFormer/ResNeXt101_32x16d** | ResNeXt-101_32x16d (SWSL) | UNetFormer (Global-Local Attention transformer) | CE thuần | 1e-5 | `src/train_unet_former_reshnet101_32.py` |
+| **D — UNetFormer + CombinedLoss (mới)** | ResNeXt-101_32x16d (SWSL) | UNetFormer (giống Track C) | CE + Dice (CombinedLoss) | 1e-5 | `src/train_unet_former_reshnet101_32_combineLoss.py` |
 
-Track B chỉ thay đổi 3 biến (encoder/loss/lr) so với Track A, **giữ nguyên decoder, dữ liệu, batch size, số iteration, seed** — để so sánh công bằng. Hai track hoàn toàn độc lập về code (không file nào bị chia sẻ/sửa đổi chéo).
+Track B/C/D chỉ thay đổi đúng các biến nêu trên so với baseline tương ứng, **giữ nguyên dữ liệu, batch size, số iteration, seed, early-stopping patience** — để so sánh công bằng. Track D so với Track C chỉ khác duy nhất loss function (CombinedLoss thay vì CE thuần); kiến trúc model là bản copy 1:1 (`src/models/unet_former_reshnet101_32_combineLoss.py` ≡ `src/models/unet_former_reshnet101_32.py`).
 
 ---
 
 ## Architecture
+
+### Track A & B — CNN Decoder
 
 ```
 Input (1024×1024, train crop 512×512)
@@ -43,6 +47,31 @@ Segmentation Map (9 classes)
 
 **Key design**: Channel Projection Block chuẩn hóa output encoder về cùng kích thước trước khi decode, nên CNN decoder giống nhau tuyệt đối giữa Track A và Track B — đảm bảo so sánh công bằng khi đổi encoder.
 
+### Track C & D — UNetFormer Decoder
+
+```
+Input (1024×1024, train crop 512×512)
+     │
+     ▼
+┌────────────────────────────────────────────────────────────────┐
+│  Encoder: ResNeXt-101_32x16d (SWSL) → channels [256,512,1024,2048] │
+└────────────────────────────────────────────────────────────────┘
+     │  4 multi-scale feature maps (stride 4→32)
+     ▼
+┌──────────────────────────────────────────────────────────────┐
+│  UNetFormer Decoder (Global-Local Attention, paper-faithful) │
+│  Stage 4 (deepest): Conv1x1 → Block (GLA self-attention)     │
+│  Stage 3: Weighted Fusion (skip) → Block (GLA)               │
+│  Stage 2: Weighted Fusion (skip) → Block (GLA)                │
+│  Stage 1: FeatureRefinementHead (spatial + channel attention) │
+└──────────────────────────────────────────────────────────────┘
+     │
+     ▼
+Segmentation Map (9 classes)
+```
+
+**Key design**: Decoder port từ kiến trúc UNetFormer gốc — không có DAPCN (không boundary loss, không prototype/contrastive learning, không dynamic anchor point), chỉ gồm `GlobalLocalAttention` + `Block` (MLP) + `WF` (Weighted Fusion) + `FeatureRefinementHead`. Kiến trúc giống tuyệt đối giữa Track C và Track D — chỉ khác loss function dùng để train.
+
 ---
 
 ## Dataset — OpenEarthMap
@@ -70,6 +99,8 @@ Segmentation Map (9 classes)
 
 ## Ablation Experiments
 
+Mỗi track có 3 lượt train (500 / 1,000 / 1,500 ảnh), dùng **chung 1 seed (42)** trong mỗi track (model init + sampler shuffle) — chỉ khác lượng dữ liệu train, để cô lập đúng biến đang khảo sát.
+
 ### Track A — ResNet-101 baseline (gốc)
 
 | Experiment | Train images | Config |
@@ -78,9 +109,7 @@ Segmentation Map (9 classes)
 | Luot 2 | 1,000 | `configs/cnn/luot2_1000.yaml` |
 | Luot 3 | 1,500 | `configs/cnn/luot3_1500.yaml` |
 
-Cả 3 lượt dùng chung 1 seed (42) (model init + sampler shuffle), giống Track B.
-
-### Track B — ResNeXt-101_32x16d, CE thuần, lr=1e-5 (mới)
+### Track B — CNN decoder, ResNeXt-101_32x16d, CE thuần, lr=1e-5
 
 | Experiment | Train images | Config |
 |---|---|---|
@@ -88,7 +117,30 @@ Cả 3 lượt dùng chung 1 seed (42) (model init + sampler shuffle), giống T
 | Luot 2 | 1,000 | `configs/cnn_reshnet101_32/luot2_1000.yaml` |
 | Luot 3 | 1,500 | `configs/cnn_reshnet101_32/luot3_1500.yaml` |
 
-Cả 3 lượt trong mỗi track dùng **chung 1 seed (42)** (model init + sampler shuffle), chỉ khác lượng dữ liệu train, để cô lập đúng biến đang khảo sát.
+### Track C — UNetFormer decoder, ResNeXt-101_32x16d, CE thuần, lr=1e-5
+
+| Experiment | Train images | Config |
+|---|---|---|
+| Luot 1 | 500 | `configs/unet_former_reshnet101_32/luot1_500.yaml` |
+| Luot 2 | 1,000 | `configs/unet_former_reshnet101_32/luot2_1000.yaml` |
+| Luot 3 | 1,500 | `configs/unet_former_reshnet101_32/luot3_1500.yaml` |
+
+### Track D — UNetFormer decoder, ResNeXt-101_32x16d, CombinedLoss (CE+Dice), lr=1e-5 (mới)
+
+| Experiment | Train images | Config |
+|---|---|---|
+| Luot 1 | 500 | `configs/unet_former_reshnet101_32_combineLoss/luot1_500.yaml` |
+| Luot 2 | 1,000 | `configs/unet_former_reshnet101_32_combineLoss/luot2_1000.yaml` |
+| Luot 3 | 1,500 | `configs/unet_former_reshnet101_32_combineLoss/luot3_1500.yaml` |
+
+CombinedLoss có thể chỉnh trọng số qua section `LOSS` trong config:
+
+```yaml
+LOSS:
+  TYPE: "CombinedLoss"
+  CE_WEIGHT: 1.0
+  DICE_WEIGHT: 1.0
+```
 
 ---
 
@@ -97,25 +149,28 @@ Cả 3 lượt trong mỗi track dùng **chung 1 seed (42)** (model init + sampl
 ```
 UnetFormer Satellite Image/
 ├── configs/
-│   ├── cnn/                              # Track A configs
-│   │   ├── luot1_500.yaml
-│   │   ├── luot2_1000.yaml
-│   │   └── luot3_1500.yaml
-│   └── cnn_reshnet101_32/                # Track B configs
+│   ├── cnn/                                      # Track A configs
+│   ├── cnn_reshnet101_32/                        # Track B configs
+│   ├── unet_former_reshnet101_32/                # Track C configs
+│   └── unet_former_reshnet101_32_combineLoss/    # Track D configs (mới)
 │       ├── luot1_500.yaml
 │       ├── luot2_1000.yaml
 │       └── luot3_1500.yaml
 ├── src/
-│   ├── train_cnn.py                      # Track A training script (DDP + AMP)
-│   ├── train_cnn_resnext101_32.py        # Track B training script (DDP + AMP + checkpoint/resume)
+│   ├── train_cnn.py                                      # Track A training script (DDP + AMP)
+│   ├── train_cnn_resnext101_32.py                        # Track B training script (DDP + AMP + checkpoint/resume)
+│   ├── train_unet_former_reshnet101_32.py                # Track C training script (DDP + AMP + checkpoint/resume)
+│   ├── train_unet_former_reshnet101_32_combineLoss.py    # Track D training script (mới — giống Track C, đổi loss)
 │   ├── data/
 │   │   ├── dataset.py                    # OpenEarthMap PyTorch Dataset
 │   │   └── transforms.py                 # Albumentations pipelines
 │   ├── models/
-│   │   ├── unetcnn.py                    # Track A: multi-encoder CNN U-Net (resnet18/resnet101/mit_b0)
-│   │   └── unetcnn_resnext101_32.py      # Track B: CNN U-Net với encoder resnext101_32x16d
+│   │   ├── unetcnn.py                                  # Track A: multi-encoder CNN U-Net (resnet18/resnet101/mit_b0)
+│   │   ├── unetcnn_resnext101_32.py                    # Track B: CNN U-Net với encoder resnext101_32x16d
+│   │   ├── unet_former_reshnet101_32.py                # Track C: UNetFormer (GLA transformer decoder)
+│   │   └── unet_former_reshnet101_32_combineLoss.py    # Track D: kiến trúc giống 100% Track C
 │   └── utils/
-│       ├── losses.py                     # Cross-Entropy + Dice loss (dùng cho Track A)
+│       ├── losses.py                     # CrossEntropyLoss thuần + DiceLoss + CombinedLoss (CE+Dice)
 │       ├── metrics.py                    # Confusion-matrix mIoU
 │       ├── callbacks.py                  # Early stopping
 │       └── visualizer.py                 # RGB prediction visualiser
@@ -126,10 +181,13 @@ UnetFormer Satellite Image/
 ├── dataset/
 │   └── val_2000_fixed.txt                # Pre-generated validation split
 ├── requirements.txt
-├── run_cnn_experiment.sh                 # Launcher Track A
-├── run_cnn_reshnet101_32_experiment.sh   # Launcher Track B (chạy mới từ đầu)
-├── resume_checkpoint.sh                  # Resume Track B sau khi session bị ngắt
-└── read_resume.md                        # Hướng dẫn resume Track B chi tiết
+├── run_cnn_experiment.sh                                 # Launcher Track A
+├── run_cnn_reshnet101_32_experiment.sh                   # Launcher Track B
+├── run_unet_former_reshnet101_32_experiment.sh           # Launcher Track C
+├── run_unet_former_reshnet101_32_combineLoss_experiment.sh # Launcher Track D (mới)
+├── run_all.sh                             # Chạy tuần tự cả 3 lượt Track A
+├── resume_checkpoint.sh                   # Resume Track B sau khi session bị ngắt
+└── read_resume.md                         # Hướng dẫn resume Track B chi tiết
 ```
 
 ---
@@ -149,10 +207,9 @@ pip install -r requirements.txt
 **Key packages:**
 
 ```
-torch==2.10.0+cu128   torchvision==0.25.0+cu128
-timm==1.0.26          albumentations>=1.3.1
-rasterio>=1.4         pyyaml>=6.0.3
-matplotlib>=3.9       einops>=0.7.0
+torch==2.10.0+cu128   torchvision==0.25.0+cu128   (pre-installed trên Kaggle, không cài lại)
+timm==1.0.26           albumentations>=1.3.1
+rasterio>=1.4          einops>=0.7.0
 ```
 
 ---
@@ -181,10 +238,9 @@ python Tools/create_splits.py \
 torchrun --nproc_per_node=2 src/train_cnn.py --config configs/cnn/luot1_500.yaml
 ```
 
-### Track B — ResNeXt-101_32x16d (mới)
+### Track B — CNN decoder, ResNeXt-101_32x16d
 
 ```bash
-# Train with 500 / 1000 / 1500 images (chạy mới từ đầu)
 bash run_cnn_reshnet101_32_experiment.sh 1
 bash run_cnn_reshnet101_32_experiment.sh 2
 bash run_cnn_reshnet101_32_experiment.sh 3
@@ -211,27 +267,70 @@ bash resume_checkpoint.sh 1
 bash resume_checkpoint.sh 1 --path /kaggle/working/.../latest_checkpoint.pth
 ```
 
+### Track C — UNetFormer decoder, ResNeXt-101_32x16d, CE thuần
+
+```bash
+bash run_unet_former_reshnet101_32_experiment.sh 1
+bash run_unet_former_reshnet101_32_experiment.sh 2
+bash run_unet_former_reshnet101_32_experiment.sh 3
+
+# Quick smoke-test (5 iterations only)
+bash run_unet_former_reshnet101_32_experiment.sh 1 --dry-run
+```
+
+Manual launch (hỗ trợ `--resume <work_dir>/latest_checkpoint.pth` trực tiếp trên train script, chưa có wrapper `resume_checkpoint.sh` riêng cho track này):
+
+```bash
+python Tools/create_splits.py \
+    --data-root /kaggle/input/datasets/dyiyacao/openearthmap \
+    --output-dir /kaggle/working/unetformer-resnext101-openearthmap
+
+torchrun --nproc_per_node=2 src/train_unet_former_reshnet101_32.py --config configs/unet_former_reshnet101_32/luot1_500.yaml
+```
+
+### Track D — UNetFormer decoder + CombinedLoss (CE+Dice) (mới)
+
+```bash
+bash run_unet_former_reshnet101_32_combineLoss_experiment.sh 1
+bash run_unet_former_reshnet101_32_combineLoss_experiment.sh 2
+bash run_unet_former_reshnet101_32_combineLoss_experiment.sh 3
+
+# Quick smoke-test (5 iterations only)
+bash run_unet_former_reshnet101_32_combineLoss_experiment.sh 1 --dry-run
+```
+
+Manual launch (hỗ trợ `--resume <work_dir>/latest_checkpoint.pth` trực tiếp trên train script):
+
+```bash
+python Tools/create_splits.py \
+    --data-root /kaggle/input/datasets/dyiyacao/openearthmap \
+    --output-dir /kaggle/working/unetformer-resnext101-combinedloss-openearthmap
+
+torchrun --nproc_per_node=2 src/train_unet_former_reshnet101_32_combineLoss.py --config configs/unet_former_reshnet101_32_combineLoss/luot1_500.yaml
+```
+
 ---
 
 ## Training Configuration
 
-| Parameter | Track A (gốc) | Track B (mới) |
-|---|---|---|
-| Encoder | ResNet-101 (ImageNet pretrained) | ResNeXt-101_32x16d (SWSL, ~1B ảnh pretrain) |
-| Loss | CrossEntropy + Dice | CrossEntropy thuần |
-| Optimizer | AdamW | AdamW |
-| Base LR | 6e-4 | 1e-5 |
-| LR schedule | Polynomial decay (power=0.9) | Polynomial decay (power=0.9) |
-| Warmup | 500 iterations | 500 iterations |
-| Seed | 42 (chung cho cả 3 lượt) | 42 (chung cho cả 3 lượt) |
-| Batch size | 2/GPU × 2 GPU = 4 total | 2/GPU × 2 GPU = 4 total |
-| Max iterations | 40,000 | 40,000 |
-| Validation interval | every 4,000 iterations | every 4,000 iterations |
-| Early stopping patience | 3 | 3 |
-| Gradient clipping | 5.0 | 5.0 |
-| Mixed precision | AMP (FP16) | AMP (FP16) |
-| Distributed training | DDP via `torchrun` | DDP via `torchrun` |
-| Checkpoint/resume | mỗi 12,000 iter (chỉ trọng số) | **mỗi lần validation** (đầy đủ model+optimizer+scaler+early-stopping, hỗ trợ `--resume` thật) |
+| Parameter | Track A | Track B | Track C | Track D (mới) |
+|---|---|---|---|---|
+| Encoder | ResNet-101 (ImageNet) | ResNeXt-101_32x16d (SWSL) | ResNeXt-101_32x16d (SWSL) | ResNeXt-101_32x16d (SWSL) |
+| Decoder | CNN | CNN (giống Track A) | UNetFormer (GLA transformer) | UNetFormer (giống Track C) |
+| Loss | CrossEntropy + Dice | CrossEntropy thuần | CrossEntropy thuần | CrossEntropy + Dice (CombinedLoss) |
+| Optimizer | AdamW | AdamW | AdamW | AdamW |
+| Base LR | 6e-4 | 1e-5 | 1e-5 | 1e-5 |
+| LR schedule | Polynomial decay (power=0.9) | Polynomial decay (power=0.9) | Polynomial decay (power=0.9) | Polynomial decay (power=0.9) |
+| Warmup | 500 iterations | 500 iterations | 500 iterations | 500 iterations |
+| Seed | 42 (chung cho cả 3 lượt) | 42 (chung cho cả 3 lượt) | 42 (chung cho cả 3 lượt) | 42 (chung cho cả 3 lượt) |
+| Batch size | 2/GPU × 2 GPU = 4 total | 2/GPU × 2 GPU = 4 total | 2/GPU × 2 GPU = 4 total | 2/GPU × 2 GPU = 4 total |
+| Max iterations | 40,000 | 40,000 | 40,000 | 40,000 |
+| Validation interval | every 4,000 iterations | every 4,000 iterations | every 4,000 iterations | every 4,000 iterations |
+| Early stopping patience | 4 | 4 | 4 | 4 |
+| Gradient clipping | 5.0 | 5.0 | 5.0 | 5.0 |
+| Mixed precision | AMP (FP16) | AMP (FP16) | AMP (FP16) | AMP (FP16) |
+| Distributed training | DDP via `torchrun` | DDP via `torchrun` | DDP via `torchrun` | DDP via `torchrun` |
+| Checkpoint/resume | mỗi 12,000 iter (chỉ trọng số) | mỗi lần validation (đầy đủ model+optimizer+scaler+early-stopping, hỗ trợ `--resume`) | mỗi lần validation (giống Track B) | mỗi lần validation (giống Track B/C) |
 
 ---
 
@@ -250,7 +349,7 @@ work_dirs/luot1_500/
     └── iter004000_s0.png       # Prediction visualisations (RGB | GT | Pred)
 ```
 
-### Track B — `work_dirs/<experiment>/`
+### Track B / C / D — `work_dirs/<experiment>/`
 
 ```
 work_dirs/luot1_500/
@@ -264,7 +363,7 @@ work_dirs/luot1_500/
     └── iter004000_s0.png       # Prediction visualisations (RGB | GT | Pred)
 ```
 
-Track B không còn file `checkpoint_iter*.pth` định kỳ — đã thay bằng `latest_checkpoint.pth` ghi đè mỗi validation (đỡ tốn dung lượng, đủ để resume).
+Track B/C/D không có file `checkpoint_iter*.pth` định kỳ như Track A — đã thay bằng `latest_checkpoint.pth` ghi đè mỗi validation (đỡ tốn dung lượng, đủ để resume).
 
 ---
 
@@ -279,9 +378,9 @@ Track B không còn file `checkpoint_iter*.pth` định kỳ — đã thay bằn
 | Luot 3 (1,500 imgs) | 36,000–40,000 | ~3.2 h |
 | **Total (sequential)** | | **~7.5–8 h** |
 
-Early stopping (patience=3) có thể giảm đáng kể thời gian với dataset nhỏ.
+Early stopping (patience=4) có thể giảm đáng kể thời gian với dataset nhỏ.
 
-### Track B — ResNeXt-101_32x16d (ước tính, chưa đo thực tế)
+### Track B — CNN decoder, ResNeXt-101_32x16d (ước tính, chưa đo thực tế)
 
 Encoder nặng hơn ~3.5–4.5× (FLOPs/throughput) so với ResNet-101, và lr=1e-5 thấp hơn nhiều nên khó early-stop sớm như Track A — nhiều khả năng cả 3 lượt chạy gần hết 40,000 iter.
 
@@ -290,7 +389,16 @@ Encoder nặng hơn ~3.5–4.5× (FLOPs/throughput) so với ResNet-101, và lr=
 | Mỗi lượt (500/1000/1500) | ~11–15 h |
 | **Total (3 lượt, tuần tự)** | **~34–44 h** |
 
-⚠️ Mỗi lượt có thể **vượt giới hạn session GPU ~9h của Kaggle** — xem [read_resume.md](read_resume.md) để resume sau khi session bị ngắt. Khuyến nghị chạy `--dry-run` trước để đo tốc độ thực tế và hiệu chỉnh lại ước tính này.
+### Track C & D — UNetFormer decoder, ResNeXt-101_32x16d (ước tính, chưa đo thực tế)
+
+Decoder transformer (Global-Local Attention) nặng hơn CNN decoder của Track B do thêm self-attention theo window; Track D có thêm bước tính `DiceLoss` mỗi iteration (rẻ hơn nhiều so với forward/backward, không ảnh hưởng đáng kể tốc độ so với Track C). Cùng lr=1e-5 nên cũng khó early-stop sớm.
+
+| Experiment | ~Duration |
+|---|---|
+| Mỗi lượt (500/1000/1500) | ~12–17 h |
+| **Total (3 lượt, tuần tự, mỗi track)** | **~36–48 h** |
+
+⚠️ Mỗi lượt (Track B/C/D) có thể **vượt giới hạn session GPU ~9h của Kaggle** — dùng `--resume <work_dir>/latest_checkpoint.pth` trên train script tương ứng để tiếp tục sau khi session bị ngắt (Track B có thêm wrapper `resume_checkpoint.sh`, xem [read_resume.md](read_resume.md); Track C/D resume thủ công qua `torchrun ... --resume ...`). Khuyến nghị chạy `--dry-run` trước để đo tốc độ thực tế và hiệu chỉnh lại ước tính này.
 
 ---
 
