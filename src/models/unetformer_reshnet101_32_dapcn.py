@@ -347,7 +347,9 @@ def extract_boundary_map(logits, mode='sobel'):
         sy = sy.view(1, 1, 3, 3).repeat(nc, 1, 1, 1)
         gx = F.conv2d(logits, sx, padding=1, groups=nc)
         gy = F.conv2d(logits, sy, padding=1, groups=nc)
-        b = torch.sum(torch.sqrt(gx ** 2 + gy ** 2), dim=1, keepdim=True)
+        # +1e-12 trong sqrt: tránh gradient nan tại các vị trí gx=gy=0
+        # (đạo hàm sqrt(x) tại x=0 là vô hạn — lỗi kinh điển của PyTorch).
+        b = torch.sum(torch.sqrt(gx ** 2 + gy ** 2 + 1e-12), dim=1, keepdim=True)
         bmax = b.amax(dim=(2, 3), keepdim=True)
         b = torch.where(bmax > 1e-6, b / bmax, torch.zeros_like(b))
         return torch.clamp(b, 0.0, 1.0)
@@ -451,6 +453,9 @@ class UNetFormerDAPCN(nn.Module):
         if self.boundary_lambda > 0:
             b_pred = extract_boundary_map(logits_native, mode=self.boundary_mode)
             b_gt = compute_boundary_gt(gt_native, ignore_index=self.ignore_index)
+            # Clamp tránh đúng 0.0/1.0: BCE với p=0,y=0 (hoặc p=1,y=1) sinh ra
+            # 0*log(0) = nan theo IEEE754, đầu độc vĩnh viễn trọng số model.
+            b_pred = b_pred.clamp(min=1e-6, max=1.0 - 1e-6)
             with torch.autocast(device_type=logits_native.device.type, enabled=False):
                 bce = F.binary_cross_entropy(b_pred.float(), b_gt.float())
             aux['loss_boundary'] = self.boundary_lambda * bce
